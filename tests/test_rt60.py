@@ -73,8 +73,27 @@ def test_rt60_rejects_invalid_sample_rate():
     else:
         raise AssertionError("Invalid sample rate should be rejected.")
 
+
+def test_rt60_multiple_values():
+    sample_rate = 16000
+
+    for known_rt60 in [0.3, 0.5, 0.8]:
+        rir = create_synthetic_rir(
+            rt60_seconds=known_rt60,
+            sample_rate=sample_rate,
+            duration=1.5,
+        )
+
+        estimated_rt60 = estimate_rt60(rir, sample_rate)
+
+        print(
+            f"Known: {known_rt60:.3f}s | "
+            f"Estimated: {estimated_rt60:.3f}s"
+        )
+
 if __name__ == "__main__":
     test_rt60_estimation()
     test_rt60_rejects_empty_rir()
     test_rt60_rejects_silent_rir()
     test_rt60_rejects_invalid_sample_rate()
+    test_rt60_multiple_values()
