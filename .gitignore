@@ -1,0 +1,10 @@
+# Generated mel-spectrogram cache
+data/processed/mel_cache/
+
+# Generated model checkpoints
+machine_learning/checkpoints/*.pt
+
+# Python cache files
+.pytest_cache/
+__pycache__/
+*.py[cod]

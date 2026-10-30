@@ -4,17 +4,11 @@ import numpy as np
 
 
 def load_audio(file_path: str, target_sr: int = 16000):
-    """
-    Load audio as mono, resample it, and validate its duration.
+    """Load audio as mono, resample it, and validate the waveform."""
 
-    Args:
-        file_path: Path to a WAV or FLAC file.
-        target_sr: Desired sample rate in Hz.
+    if target_sr <= 0:
+        raise ValueError("Target sample rate must be positive.")
 
-    Returns:
-        audio: Mono audio waveform as a NumPy array.
-        sample_rate: Target sample rate.
-    """
     audio, sample_rate = librosa.load(
         file_path,
         sr=target_sr,
@@ -24,12 +18,7 @@ def load_audio(file_path: str, target_sr: int = 16000):
     if audio.size == 0:
         raise ValueError("The audio file is empty.")
 
-    duration = len(audio) / sample_rate
-
-    if duration < 1.0:
-        raise ValueError(
-            f"Audio is too short: {duration:.2f} seconds. "
-            "Minimum duration is 1.0 second."
-        )
+    if not np.isfinite(audio).all():
+        raise ValueError("Audio contains invalid values.")
 
     return audio, sample_rate

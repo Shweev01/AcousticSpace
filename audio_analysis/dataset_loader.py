@@ -14,7 +14,13 @@ TRAIN_PROTOCOL_FILE = (
     / "ASVspoof2019.LA.cm.train.trn.txt"
 )
 
+DEV_AUDIO_DIR = DATASET_ROOT / "ASVspoof2019_LA_dev" / "flac"
 
+DEV_PROTOCOL_FILE = (
+    DATASET_ROOT
+    / "ASVspoof2019_LA_cm_protocols"
+    / "ASVspoof2019.LA.cm.dev.trl.txt"
+)
 
 def load_protocol(protocol_path: Path = TRAIN_PROTOCOL_FILE) -> pd.DataFrame:
     """Load recording IDs and labels from an ASVspoof protocol."""
@@ -76,7 +82,16 @@ def load_training_dataset(
 
     return dataset
 
+def load_validation_dataset(
+    audio_dir: Path = DEV_AUDIO_DIR,
+    protocol_path: Path = DEV_PROTOCOL_FILE,
+) -> pd.DataFrame:
+    """Match validation protocol records to their FLAC audio files."""
 
+    return load_training_dataset(
+        audio_dir=audio_dir,
+        protocol_path=protocol_path,
+    )
 
 if __name__ == "__main__":
     dataset = load_training_dataset()
