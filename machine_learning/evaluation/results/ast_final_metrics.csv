@@ -1,0 +1,2 @@
+checkpoint_epoch,checkpoint_validation_loss,checkpoint_validation_accuracy,recordings,accuracy,macro_f1,bonafide_precision,bonafide_recall,spoof_precision,spoof_recall
+2,0.006251519223212718,0.9982289486395105,24844,0.9982289486395105,0.9951541144765892,0.9996009577015164,0.9831240188383046,0.9980750290983974,0.9999551489056333
