@@ -55,10 +55,19 @@ def test_drr_rejects_invalid_sample_rate():
     else:
         raise AssertionError("Invalid sample rate should be rejected.")
 
+def test_drr_rejects_invalid_direct_window():
+    try:
+        estimate_drr(np.array([1.0, 0.5]), direct_window_ms=0)
+    except ValueError:
+        print("PASS: Invalid direct window is rejected.")
+    else:
+        raise AssertionError("Invalid direct window should be rejected.")
 
 if __name__ == "__main__":
     test_drr_known_energy_ratio()
     test_drr_rejects_empty_rir()
     test_drr_rejects_silent_rir()
     test_drr_rejects_invalid_sample_rate()
+    test_drr_rejects_invalid_direct_window()
     print("All DRR tests passed.")
+    

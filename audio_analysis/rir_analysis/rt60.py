@@ -20,6 +20,9 @@ def estimate_rt60(rir: np.ndarray, sample_rate: int = 16000) -> float:
     if rir.size == 0:
         raise ValueError("RIR cannot be empty.")
 
+    if rir.ndim != 1:
+        raise ValueError("RIR must be a 1D array.")
+
     if sample_rate <= 0:
         raise ValueError("Sample rate must be positive.")
 

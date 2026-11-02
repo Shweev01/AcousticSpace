@@ -4,7 +4,7 @@ import soundfile as sf
 
 from audio_analysis.rir_analysis.reverberation import apply_reverberation
 from audio_analysis.rir_analysis.rt60 import estimate_rt60
-
+from audio_analysis.visualization import plot_rir_analysis
 
 AUDIO_PATH = (
     r"C:\AcousticSpace_Dataset\LA\LA\ASVspoof2019_LA_train"
@@ -41,6 +41,7 @@ def main():
         )
 
     rir = create_synthetic_rir(sample_rate=sample_rate)
+    plot_rir_analysis(rir, sample_rate=sample_rate)
     reverberated = apply_reverberation(
     audio,
     rir,

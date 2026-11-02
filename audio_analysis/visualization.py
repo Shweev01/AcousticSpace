@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from audio_analysis.feature_extraction import extract_audio_features
-
+from audio_analysis.rir_analysis.rt60 import estimate_rt60
 
 def plot_audio_features(file_path: str) -> None:
     """Plot the waveform and Mel spectrogram of an audio file."""
@@ -40,3 +40,51 @@ def plot_audio_features(file_path: str) -> None:
     fig.colorbar(image, ax=axes[1], format="%+2.0f dB")
     fig.tight_layout()
     plt.show()
+
+
+def plot_rir_analysis(rir: np.ndarray, sample_rate: int = 16000) -> None:
+    """Plot the RIR waveform and its Schroeder energy decay curve."""
+
+    rir = np.asarray(rir, dtype=np.float64)
+
+    if rir.ndim != 1 or rir.size == 0:
+        raise ValueError("RIR must be a non-empty 1D array.")
+
+    if not np.isfinite(rir).all():
+        raise ValueError("RIR contains invalid values.")
+
+    if np.max(np.abs(rir)) == 0:
+        raise ValueError("RIR cannot contain only zeros.")
+
+    if sample_rate <= 0:
+        raise ValueError("Sample rate must be positive.")
+
+    time_axis = np.arange(len(rir)) / sample_rate
+
+    energy = rir ** 2
+    decay_curve = np.cumsum(energy[::-1])[::-1]
+    decay_db = 10 * np.log10(
+        np.maximum(decay_curve / decay_curve[0], 1e-12)
+    )
+
+    rt60 = estimate_rt60(rir, sample_rate)
+
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+
+    axes[0].plot(time_axis, rir)
+    axes[0].set_title("Room Impulse Response (RIR)")
+    axes[0].set_xlabel("Time (seconds)")
+    axes[0].set_ylabel("Amplitude")
+    axes[0].grid(True)
+
+    axes[1].plot(time_axis, decay_db)
+    axes[1].set_title(f"Schroeder Energy Decay Curve (Estimated RT60: {rt60:.3f} s)")
+    axes[1].set_xlabel("Time (seconds)")
+    axes[1].set_ylabel("Energy Decay (dB)")
+    axes[1].set_ylim(-60, 5)
+    axes[1].grid(True)
+
+    fig.tight_layout()
+    plt.show()
+
+   

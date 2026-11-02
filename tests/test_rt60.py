@@ -91,9 +91,23 @@ def test_rt60_multiple_values():
             f"Estimated: {estimated_rt60:.3f}s"
         )
 
+        assert abs(estimated_rt60 - known_rt60) < 0.15
+
+
+def test_rt60_rejects_multidimensional_rir():
+    rir = np.ones((2, 16000))
+
+    try:
+        estimate_rt60(rir)
+    except ValueError:
+        print("PASS: Multidimensional RIR is rejected.")
+    else:
+        raise AssertionError("Multidimensional RIR should be rejected.")
+
 if __name__ == "__main__":
     test_rt60_estimation()
     test_rt60_rejects_empty_rir()
     test_rt60_rejects_silent_rir()
     test_rt60_rejects_invalid_sample_rate()
     test_rt60_multiple_values()
+    test_rt60_rejects_multidimensional_rir()

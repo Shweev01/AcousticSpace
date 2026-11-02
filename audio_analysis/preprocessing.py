@@ -18,6 +18,9 @@ def load_audio(file_path: str, target_sr: int = 16000):
     if audio.size == 0:
         raise ValueError("The audio file is empty.")
 
+    if len(audio) / sample_rate < 1.0:
+        raise ValueError("Audio is too short. Minimum duration is 1 second.")
+
     if not np.isfinite(audio).all():
         raise ValueError("Audio contains invalid values.")
 
