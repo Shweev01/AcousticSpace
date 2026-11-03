@@ -11,17 +11,11 @@ def augment_with_rir(
     target_peak: float = 0.99,
 ) -> np.ndarray:
     """
-    Create an augmented audio sample by applying a room impulse response.
+    Apply a Room Impulse Response to speech audio.
 
-    Args:
-        audio: One-dimensional speech waveform.
-        rir: One-dimensional room impulse response.
-        normalize: Whether to normalize the output peak.
-        target_peak: Desired peak amplitude when normalization is enabled.
-
-    Returns:
-        Reverberated audio as a NumPy array.
+    Returns a reverberated waveform.
     """
+
     audio = np.asarray(audio, dtype=np.float32)
     rir = np.asarray(rir, dtype=np.float32)
 
@@ -37,9 +31,18 @@ def augment_with_rir(
     if not np.isfinite(rir).all():
         raise ValueError("RIR contains invalid values.")
 
-    return apply_reverberation(
+    if normalize:
+        if not np.isfinite(target_peak) or target_peak <= 0:
+            raise ValueError("Target peak must be positive and finite.")
+
+    augmented_audio = apply_reverberation(
         audio,
         rir,
         normalize=normalize,
         target_peak=target_peak,
     )
+
+    if not np.isfinite(augmented_audio).all():
+        raise ValueError("Augmented audio contains invalid values.")
+
+    return augmented_audio

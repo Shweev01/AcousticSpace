@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 from audio_analysis.feature_extraction import extract_audio_features
 from audio_analysis.rir_analysis.rt60 import estimate_rt60
+from audio_analysis.rir_analysis.drr import estimate_drr
 
 def plot_audio_features(file_path: str) -> None:
     """Plot the waveform and Mel spectrogram of an audio file."""
@@ -43,7 +44,7 @@ def plot_audio_features(file_path: str) -> None:
 
 
 def plot_rir_analysis(rir: np.ndarray, sample_rate: int = 16000) -> None:
-    """Plot the RIR waveform and its Schroeder energy decay curve."""
+    """Plot RIR waveform and Schroeder energy decay with RT60 and DRR."""
 
     rir = np.asarray(rir, dtype=np.float64)
 
@@ -61,27 +62,54 @@ def plot_rir_analysis(rir: np.ndarray, sample_rate: int = 16000) -> None:
 
     time_axis = np.arange(len(rir)) / sample_rate
 
+    # Calculate Schroeder energy decay curve.
     energy = rir ** 2
     decay_curve = np.cumsum(energy[::-1])[::-1]
+
     decay_db = 10 * np.log10(
         np.maximum(decay_curve / decay_curve[0], 1e-12)
     )
 
-    rt60 = estimate_rt60(rir, sample_rate)
+    # Estimate RT60 and DRR.
+    try:
+        rt60 = estimate_rt60(rir, sample_rate)
+        rt60_text = f"{rt60:.3f} s"
+    except ValueError:
+        rt60 = None
+        rt60_text = "Unavailable"
+
+    try:
+        drr = estimate_drr(rir, sample_rate)
+        drr_text = f"{drr:.3f} dB"
+    except ValueError:
+        drr = None
+        drr_text = "Unavailable"
+
+    print(f"Estimated RT60: {rt60_text}")
+    print(f"Estimated DRR: {drr_text}")
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 8))
 
+    # RIR waveform.
     axes[0].plot(time_axis, rir)
     axes[0].set_title("Room Impulse Response (RIR)")
     axes[0].set_xlabel("Time (seconds)")
     axes[0].set_ylabel("Amplitude")
     axes[0].grid(True)
 
-    axes[1].plot(time_axis, decay_db)
-    axes[1].set_title(f"Schroeder Energy Decay Curve (Estimated RT60: {rt60:.3f} s)")
+    # Schroeder energy decay curve.
+    axes[1].plot(time_axis, decay_db, label="Energy decay")
+
+    axes[1].axhline(-5, linestyle="--", label="-5 dB")
+    axes[1].axhline(-35, linestyle="--", label="-35 dB")
+
+    axes[1].set_title(
+        f"Schroeder Energy Decay Curve | RT60: {rt60_text} | DRR: {drr_text}"
+    )
     axes[1].set_xlabel("Time (seconds)")
-    axes[1].set_ylabel("Energy Decay (dB)")
+    axes[1].set_ylabel("Relative Energy (dB)")
     axes[1].set_ylim(-60, 5)
+    axes[1].legend()
     axes[1].grid(True)
 
     fig.tight_layout()
