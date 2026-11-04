@@ -1,5 +1,6 @@
 
 import { useEffect, useRef, useState } from "react";
+import WaveSurfer from "wavesurfer.js";
 import Spectrogram from "wavesurfer.js/dist/plugins/spectrogram.esm.js";
 
 type SpectrogramViewerProps = {
@@ -14,38 +15,28 @@ export default function SpectrogramViewer({
 
   useEffect(() => {
     let cancelled = false;
-    let plugin: ReturnType<typeof Spectrogram.create> | undefined;
-    let objectUrl: string | undefined;
+    let wavesurfer: WaveSurfer | null = null;
+    let audioContext: AudioContext | null = null;
+    let objectUrl: string | null = null;
 
     async function renderSpectrogram() {
       setError("");
 
       try {
-        const audioContext = new AudioContext();
+        audioContext = new AudioContext();
+
         const arrayBuffer = await file.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        if (cancelled || !containerRef.current) {
-          await audioContext.close();
-          return;
-        }
+        if (cancelled || !containerRef.current) return;
 
         const samples = audioBuffer.getChannelData(0);
         const sampleRate = audioBuffer.sampleRate;
 
-        // Build a playable WAV from the decoded samples for WaveSurfer.
         const wavBuffer = createWav(samples, sampleRate);
         objectUrl = URL.createObjectURL(wavBuffer);
 
-        const WaveSurfer = (await import("wavesurfer.js")).default;
-
-        if (cancelled || !containerRef.current) {
-          URL.revokeObjectURL(objectUrl);
-          await audioContext.close();
-          return;
-        }
-
-        const wavesurfer = WaveSurfer.create({
+        wavesurfer = WaveSurfer.create({
           container: containerRef.current,
           height: 220,
           waveColor: "#7d8ce8",
@@ -54,7 +45,7 @@ export default function SpectrogramViewer({
           interact: false,
         });
 
-        plugin = Spectrogram.create({
+        const plugin = Spectrogram.create({
           labels: true,
           height: 220,
           splitChannels: false,
@@ -70,26 +61,30 @@ export default function SpectrogramViewer({
             setError("Could not render the spectrogram for this audio file.");
           }
         });
-
-        await audioContext.close();
-
-        return () => {
-          wavesurfer.destroy();
-        };
       } catch {
         if (!cancelled) {
           setError("Unable to decode this audio file for spectrogram display.");
         }
+      } finally {
+        if (audioContext && audioContext.state !== "closed") {
+          await audioContext.close();
+        }
       }
     }
 
-    const cleanupPromise = renderSpectrogram();
+    void renderSpectrogram();
 
     return () => {
       cancelled = true;
-      URL.revokeObjectURL(objectUrl ?? "");
-      void cleanupPromise;
-      plugin = undefined;
+      wavesurfer?.destroy();
+
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+
+      if (audioContext && audioContext.state !== "closed") {
+        void audioContext.close();
+      }
     };
   }, [file]);
 
@@ -100,6 +95,7 @@ export default function SpectrogramViewer({
       ) : (
         <div ref={containerRef} className="spectrogram-canvas" />
       )}
+
       <p className="spectrogram-caption">
         Frequency content of the uploaded recording · visualisation only
       </p>
@@ -133,6 +129,7 @@ function createWav(samples: Float32Array, sampleRate: number): Blob {
 
   for (let i = 0; i < samples.length; i++) {
     const value = Math.max(-1, Math.min(1, samples[i]));
+
     view.setInt16(
       44 + i * 2,
       value < 0 ? value * 32768 : value * 32767,

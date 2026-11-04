@@ -1,12 +1,25 @@
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import WaveSurfer from "wavesurfer.js";
 
 interface WaveformViewerProps {
   file: File;
 }
 
-function WaveformViewer({ file }: WaveformViewerProps) {
+export interface WaveformViewerHandle {
+  seekToTime: (seconds: number) => void;
+}
+
+const WaveformViewer = forwardRef<
+  WaveformViewerHandle,
+  WaveformViewerProps
+>(function WaveformViewer({ file }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
 
@@ -14,6 +27,20 @@ function WaveformViewer({ file }: WaveformViewerProps) {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [error, setError] = useState("");
+
+  useImperativeHandle(ref, () => ({
+    seekToTime(seconds: number) {
+      const wavesurfer = wavesurferRef.current;
+
+      if (wavesurfer && Number.isFinite(seconds)) {
+        const safeTime = Math.max(
+          0,
+          Math.min(seconds, wavesurfer.getDuration())
+        );
+        wavesurfer.setTime(safeTime);
+      }
+    },
+  }));
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -116,6 +143,6 @@ function WaveformViewer({ file }: WaveformViewerProps) {
       </div>
     </section>
   );
-}
+});
 
 export default WaveformViewer;
