@@ -23,8 +23,21 @@ class ASTRIRFusionDataset(Dataset):
     AST audio features with RT60 and DRR values.
     """
 
-    def __init__(self, csv_path, feature_extractor=None):
+    def __init__(
+        self,
+        csv_path,
+        feature_extractor=None,
+        feature_indices=(0, 1),
+    ):
         self.csv_path = Path(csv_path)
+        self.feature_indices = tuple(feature_indices)
+
+        if not self.feature_indices or any(
+            index not in (0, 1) for index in self.feature_indices
+        ):
+            raise ValueError(
+                "feature_indices must contain 0 (RT60), 1 (DRR), or both."
+        )
         self.acoustic_stats = load_acoustic_stats()
         self.acoustic_mean = torch.tensor(
             self.acoustic_stats["mean"], dtype=torch.float32
@@ -97,7 +110,7 @@ class ASTRIRFusionDataset(Dataset):
 
         input_values = features["input_values"].squeeze(0)
 
-        acoustic_features = torch.tensor(
+        all_acoustic_features = torch.tensor(
             [
                 float(record["rt60_seconds"]),
                 float(record["drr_db"]),
@@ -105,10 +118,15 @@ class ASTRIRFusionDataset(Dataset):
             dtype=torch.float32,
         )
 
+        # Select RT60, DRR, or both.
+        acoustic_features = all_acoustic_features[
+            list(self.feature_indices)
+        ]
+
         # Normalize using training-set statistics.
         acoustic_features = (
-            acoustic_features - self.acoustic_mean
-        ) / self.acoustic_std
+            acoustic_features - self.acoustic_mean[list(self.feature_indices)]
+        ) / self.acoustic_std[list(self.feature_indices)]
 
         label = torch.tensor(
             int(record["label"]),

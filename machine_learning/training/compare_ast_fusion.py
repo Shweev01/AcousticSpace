@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from transformers import ASTForAudioClassification
+
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -18,6 +19,7 @@ from sklearn.metrics import (
 from machine_learning.training.ast_dataset import MODEL_NAME
 from machine_learning.training.ast_rir_fusion import ASTRIRFusionModel
 from machine_learning.training.fusion_dataset import ASTRIRFusionDataset
+
 from machine_learning.inference.predict import (
     CHECKPOINT_PATH,
     ID2LABEL,
@@ -27,20 +29,38 @@ from machine_learning.inference.predict import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-DEV_CSV = PROJECT_ROOT / "data" / "processed" / "fusion_dev_pairs.csv"
+DEV_CSV = (
+    PROJECT_ROOT
+    / "data"
+    / "processed"
+    / "fusion_dev_pairs.csv"
+)
 
-FUSION_CHECKPOINT = (
+CHECKPOINT_DIR = (
     PROJECT_ROOT
     / "machine_learning"
     / "checkpoints"
-    / "ast_rir_fusion_best.pt"
+)
+
+AST_CHECKPOINT = CHECKPOINT_PATH
+
+FULL_FUSION_CHECKPOINT = (
+    CHECKPOINT_DIR / "ast_rir_fusion_best.pt"
+)
+
+RT60_CHECKPOINT = (
+    CHECKPOINT_DIR / "ast_rir_rt60_best.pt"
+)
+
+DRR_CHECKPOINT = (
+    CHECKPOINT_DIR / "ast_rir_drr_best.pt"
 )
 
 RESULTS_PATH = (
     PROJECT_ROOT
     / "data"
     / "processed"
-    / "model_comparison_results.json"
+    / "ablation_comparison_results.json"
 )
 
 BATCH_SIZE = 4
@@ -56,7 +76,9 @@ def calculate_metrics(labels, probabilities):
     eer = np.interp(0, fpr - fnr, fpr)
 
     return {
-        "accuracy": float(accuracy_score(labels, predictions)),
+        "accuracy": float(
+            accuracy_score(labels, predictions)
+        ),
         "precision": float(
             precision_score(labels, predictions, zero_division=0)
         ),
@@ -66,9 +88,28 @@ def calculate_metrics(labels, probabilities):
         "f1_score": float(
             f1_score(labels, predictions, zero_division=0)
         ),
-        "roc_auc": float(roc_auc_score(labels, probabilities)),
+        "roc_auc": float(
+            roc_auc_score(labels, probabilities)
+        ),
         "eer": float(eer),
     }
+
+
+def load_fusion_checkpoint(model, checkpoint_path, device):
+
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=True,
+    )
+
+    model.fusion_classifier.load_state_dict(
+        checkpoint["fusion_classifier_state_dict"]
+    )
+
+    model.eval()
+
+    return model
 
 
 def main():
@@ -79,17 +120,24 @@ def main():
 
     print("Using device:", device)
 
-    if not CHECKPOINT_PATH.is_file():
-        raise FileNotFoundError(
-            f"AST checkpoint not found: {CHECKPOINT_PATH}"
-        )
+    required_files = [
+        DEV_CSV,
+        AST_CHECKPOINT,
+        FULL_FUSION_CHECKPOINT,
+        RT60_CHECKPOINT,
+        DRR_CHECKPOINT,
+    ]
 
-    if not FUSION_CHECKPOINT.is_file():
-        raise FileNotFoundError(
-            f"Fusion checkpoint not found: {FUSION_CHECKPOINT}"
-        )
+    for path in required_files:
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Required file not found: {path}"
+            )
 
-    # Load validation dataset.
+    # --------------------------------------------------
+    # Load validation dataset ONCE
+    # --------------------------------------------------
+
     print("\nLoading validation dataset...")
 
     dev_dataset = ASTRIRFusionDataset(DEV_CSV)
@@ -104,7 +152,10 @@ def main():
 
     print("Validation samples:", len(dev_dataset))
 
-    # Load fine-tuned AST model.
+    # --------------------------------------------------
+    # Load trained AST model
+    # --------------------------------------------------
+
     print("\nLoading trained AST model...")
 
     ast_model = ASTForAudioClassification.from_pretrained(
@@ -116,7 +167,7 @@ def main():
     )
 
     ast_checkpoint = torch.load(
-        CHECKPOINT_PATH,
+        AST_CHECKPOINT,
         map_location=device,
         weights_only=True,
     )
@@ -127,40 +178,80 @@ def main():
 
     ast_model.to(device).eval()
 
-    # Create fusion model using the same AST backbone.
-    print("\nLoading trained fusion model...")
+    # --------------------------------------------------
+    # Load four model configurations
+    # --------------------------------------------------
 
-    fusion_model = ASTRIRFusionModel(ast_model).to(device)
+    print("\nLoading fusion models...")
 
-    fusion_checkpoint = torch.load(
-        FUSION_CHECKPOINT,
-        map_location=device,
-        weights_only=True,
+    rt60_model = ASTRIRFusionModel(
+        ast_model,
+        acoustic_feature_size=1,
+    ).to(device)
+
+    drr_model = ASTRIRFusionModel(
+        ast_model,
+        acoustic_feature_size=1,
+    ).to(device)
+
+    full_fusion_model = ASTRIRFusionModel(
+        ast_model,
+        acoustic_feature_size=2,
+    ).to(device)
+
+    rt60_model = load_fusion_checkpoint(
+        rt60_model,
+        RT60_CHECKPOINT,
+        device,
     )
 
-    fusion_model.fusion_classifier.load_state_dict(
-        fusion_checkpoint["fusion_classifier_state_dict"]
+    drr_model = load_fusion_checkpoint(
+        drr_model,
+        DRR_CHECKPOINT,
+        device,
     )
 
-    fusion_model.eval()
+    full_fusion_model = load_fusion_checkpoint(
+        full_fusion_model,
+        FULL_FUSION_CHECKPOINT,
+        device,
+    )
 
-    print("AST checkpoint loaded.")
-    print("Fusion checkpoint loaded.")
+    print("AST-only checkpoint loaded.")
+    print("AST + RT60 checkpoint loaded.")
+    print("AST + DRR checkpoint loaded.")
+    print("AST + RT60 + DRR checkpoint loaded.")
 
-    # Collect predictions from both models.
+    # --------------------------------------------------
+    # Collect predictions
+    # --------------------------------------------------
+
     all_labels = []
-    ast_probabilities = []
-    fusion_probabilities = []
 
-    print("\nEvaluating both models...")
+    probabilities = {
+        "ast_only": [],
+        "ast_rt60": [],
+        "ast_drr": [],
+        "ast_rt60_drr": [],
+    }
+
+    print("\nEvaluating all four configurations...")
 
     with torch.inference_mode():
 
         for batch_index, batch in enumerate(dev_loader):
 
             input_values = batch["input_values"].to(device)
-            acoustic_features = batch["acoustic_features"].to(device)
+
+            # Dataset contains both normalized acoustic features.
+            acoustic_features = batch[
+                "acoustic_features"
+            ].to(device)
+
             labels = batch["label"].to(device)
+
+            rt60_features = acoustic_features[:, [0]]
+            drr_features = acoustic_features[:, [1]]
 
             with torch.autocast(
                 device_type=device.type,
@@ -168,87 +259,139 @@ def main():
                 enabled=(device.type == "cuda"),
             ):
 
-                # AST-only prediction.
+                # 1. AST only
                 ast_logits = ast_model(
                     input_values=input_values
                 ).logits
 
-                # AST + RIR fusion prediction.
-                fusion_logits = fusion_model(
+                # 2. AST + RT60
+                rt60_logits = rt60_model(
+                    input_values,
+                    rt60_features,
+                )
+
+                # 3. AST + DRR
+                drr_logits = drr_model(
+                    input_values,
+                    drr_features,
+                )
+
+                # 4. AST + RT60 + DRR
+                full_logits = full_fusion_model(
                     input_values,
                     acoustic_features,
                 )
 
-            ast_probs = torch.softmax(
-                ast_logits.float(), dim=1
-            )[:, 1]
+            logits_dict = {
+                "ast_only": ast_logits,
+                "ast_rt60": rt60_logits,
+                "ast_drr": drr_logits,
+                "ast_rt60_drr": full_logits,
+            }
 
-            fusion_probs = torch.softmax(
-                fusion_logits.float(), dim=1
-            )[:, 1]
+            for name, logits in logits_dict.items():
 
-            all_labels.extend(labels.cpu().numpy().tolist())
-            ast_probabilities.extend(
-                ast_probs.cpu().numpy().tolist()
+                spoof_probs = torch.softmax(
+                    logits.float(),
+                    dim=1,
+                )[:, 1]
+
+                probabilities[name].extend(
+                    spoof_probs.cpu().numpy().tolist()
+                )
+
+            all_labels.extend(
+                labels.cpu().numpy().tolist()
             )
-            fusion_probabilities.extend(
-                fusion_probs.cpu().numpy().tolist()
-            )
 
-            if (batch_index + 1) % 500 == 0:
+            if (batch_index + 1) % 100 == 0:
                 print(
                     f"Processed batches: "
                     f"{batch_index + 1}/{len(dev_loader)}"
                 )
 
+    # --------------------------------------------------
+    # Calculate metrics
+    # --------------------------------------------------
+
     labels = np.array(all_labels)
-    ast_probabilities = np.array(ast_probabilities)
-    fusion_probabilities = np.array(fusion_probabilities)
-
-    # Calculate metrics.
-    ast_metrics = calculate_metrics(
-        labels,
-        ast_probabilities,
-    )
-
-    fusion_metrics = calculate_metrics(
-        labels,
-        fusion_probabilities,
-    )
-
-    # Display comparison.
-    print("\n========== MODEL COMPARISON ==========")
-
-    print(
-        f"{'Metric':<15}"
-        f"{'AST-only':>15}"
-        f"{'AST + RIR':>15}"
-    )
-
-    for metric in ast_metrics:
-
-        print(
-            f"{metric:<15}"
-            f"{ast_metrics[metric]:>15.4f}"
-            f"{fusion_metrics[metric]:>15.4f}"
-        )
 
     results = {
         "validation_samples": len(labels),
         "positive_class": "spoof",
-        "ast_only": ast_metrics,
-        "ast_rir_fusion": fusion_metrics,
     }
+
+    for name in probabilities:
+
+        probs = np.array(probabilities[name])
+
+        results[name] = calculate_metrics(
+            labels,
+            probs,
+        )
+
+    # --------------------------------------------------
+    # Display results
+    # --------------------------------------------------
+
+    print("\n========== DAY 6 ABLATION RESULTS ==========")
+
+    model_names = {
+        "ast_only": "AST-only",
+        "ast_rt60": "AST + RT60",
+        "ast_drr": "AST + DRR",
+        "ast_rt60_drr": "AST + RT60 + DRR",
+    }
+
+    metrics = [
+        "accuracy",
+        "precision",
+        "recall",
+        "f1_score",
+        "roc_auc",
+        "eer",
+    ]
+
+    print(f"{'Metric':<15}", end="")
+
+    for name in model_names:
+        print(f"{model_names[name]:>20}", end="")
+
+    print()
+
+    for metric in metrics:
+
+        print(f"{metric:<15}", end="")
+
+        for name in model_names:
+
+            value = results[name][metric]
+
+            print(f"{value:>20.4f}", end="")
+
+        print()
+
+    # --------------------------------------------------
+    # Save results
+    # --------------------------------------------------
 
     RESULTS_PATH.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    with RESULTS_PATH.open("w", encoding="utf-8") as file:
-        json.dump(results, file, indent=4)
+    with RESULTS_PATH.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
 
-    print("\nComparison results saved to:")
+        json.dump(
+            results,
+            file,
+            indent=4,
+        )
+
+    print("\nAblation results saved to:")
     print(RESULTS_PATH)
 
 
